@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import AsyncGenerator
 
+import httpx
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
@@ -234,11 +235,25 @@ def list_tools() -> list[dict]:
 
 @app.get(
     "/health",
-    summary="Liveness check",
+    summary="Liveness check with Ollama connectivity",
+    description=(
+        "Returns service status plus whether Ollama is reachable. "
+        "`ollama_reachable: false` means the agent will fail — "
+        "run `ollama serve` to fix it."
+    ),
 )
-def health() -> dict:
+async def health() -> dict:
+    ollama_reachable = False
+    try:
+        async with httpx.AsyncClient(timeout=3) as _client:
+            r = await _client.get(f"{settings.ollama_endpoint}/api/tags")
+            ollama_reachable = r.status_code == 200
+    except Exception:
+        pass
+
     return {
-        "status":   "ok",
-        "model":    settings.ollama_model,
-        "endpoint": settings.ollama_endpoint,
+        "status":           "ok",
+        "model":            settings.ollama_model,
+        "endpoint":         settings.ollama_endpoint,
+        "ollama_reachable": ollama_reachable,
     }

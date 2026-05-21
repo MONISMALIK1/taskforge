@@ -77,6 +77,17 @@ def test_health_returns_ok(client: TestClient):
     assert body["status"] == "ok"
     assert "model" in body
     assert "endpoint" in body
+    assert "ollama_reachable" in body
+
+
+def test_health_reports_ollama_unreachable(client: TestClient):
+    """When Ollama is down the endpoint still returns 200 but flags it."""
+    import httpx
+    with patch("app.main.httpx.AsyncClient") as mock_cls:
+        mock_cls.return_value.__aenter__.side_effect = httpx.ConnectError("refused")
+        r = client.get("/health")
+    assert r.status_code == 200
+    assert r.json()["ollama_reachable"] is False
 
 
 # ── GET /tools ────────────────────────────────────────────────────────────────
