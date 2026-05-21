@@ -144,6 +144,18 @@ async def summarise_text(text: str) -> str:
     return truncated + suffix
 
 
+@tool(
+    "list_files",
+    "List files in /tmp, optionally filtered by a glob pattern. "
+    "Args: pattern (str, default '*'). Returns a newline-separated list of filenames.",
+)
+async def list_files(pattern: str = "*") -> str:
+    matches = sorted(p for p in Path("/tmp").glob(pattern) if p.is_file())
+    if not matches:
+        return f"No files matching '{pattern}' in /tmp."
+    return "\n".join(f.name for f in matches)
+
+
 # ── Public helpers ────────────────────────────────────────────────────────────
 
 

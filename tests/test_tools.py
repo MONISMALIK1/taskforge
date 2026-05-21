@@ -150,5 +150,19 @@ async def test_unknown_tool_returns_error():
 
 def test_tools_description_lists_all_tools():
     desc = tools_description()
-    for name in ["http_get", "write_file", "read_file", "run_shell", "parse_json", "summarise_text"]:
+    for name in ["http_get", "write_file", "read_file", "run_shell", "parse_json", "summarise_text", "list_files"]:
         assert name in desc
+
+
+@pytest.mark.asyncio
+async def test_list_files_returns_filenames(tmp_path):
+    (Path("/tmp") / "tf_listtest.txt").write_text("hello")
+    result = await call_tool("list_files", {"pattern": "tf_listtest.txt"})
+    assert "tf_listtest.txt" in result
+    Path("/tmp/tf_listtest.txt").unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_list_files_no_match():
+    result = await call_tool("list_files", {"pattern": "no_such_file_xyz_*.txt"})
+    assert "no files" in result.lower() or "no_such_file" in result.lower()
