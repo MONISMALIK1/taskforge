@@ -203,6 +203,47 @@ def delete_task(
     db.commit()
 
 
+@app.post(
+    "/tasks/{task_id}/retry",
+    response_model=TaskResponse,
+    status_code=202,
+    summary="Retry a failed or completed task",
+    description=(
+        "Creates a new task record with the same prompt and queues it for execution. "
+        "Only tasks with status `failed` or `done` can be retried. "
+        "The original task record is left unchanged."
+    ),
+)
+async def retry_task(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> TaskRecord:
+    original = db.query(TaskRecord).filter(TaskRecord.id == task_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
+    if original.status not in (TaskStatus.failed, TaskStatus.done):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Task is currently '{original.status}' — "
+                "only failed or done tasks can be retried."
+            ),
+        )
+    new_id = str(uuid.uuid4())
+    record  = TaskRecord(
+        id     = new_id,
+        prompt = original.prompt,
+        status = TaskStatus.pending,
+        logs   = [],
+    )
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    background_tasks.add_task(_execute_task, new_id, original.prompt)
+    return record
+
+
 @app.get(
     "/stats",
     summary="Task statistics",

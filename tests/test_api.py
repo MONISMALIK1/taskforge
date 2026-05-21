@@ -253,6 +253,51 @@ def test_delete_task_not_found(client: TestClient):
     assert r.status_code == 404
 
 
+# ── POST /tasks/{id}/retry ────────────────────────────────────────────────────
+
+
+def test_retry_failed_task_creates_new_record(client: TestClient):
+    with patch("app.main.run_agent", new_callable=AsyncMock) as mock_agent:
+        mock_agent.side_effect = RuntimeError("boom")
+        original = client.post(
+            "/tasks", json={"prompt": "A task that will fail hard"}
+        ).json()
+
+    r = client.post(f"/tasks/{original['id']}/retry")
+    assert r.status_code == 202
+    retry = r.json()
+    assert retry["id"] != original["id"]
+    assert retry["prompt"] == original["prompt"]
+    assert retry["status"] == TaskStatus.pending
+
+
+def test_retry_not_found_returns_404(client: TestClient):
+    r = client.post("/tasks/ghost-retry-id/retry")
+    assert r.status_code == 404
+
+
+def test_retry_running_task_returns_409(client: TestClient):
+    """Cannot retry a task that is still running."""
+    import time
+    from app.database import Base
+    from app.models import TaskRecord, TaskStatus as TS
+
+    # Manually insert a running task directly into the DB
+    db = next(override_get_db())
+    record = TaskRecord(
+        id="manual-running-id",
+        prompt="This task is still running now",
+        status=TS.running,
+        logs=[],
+    )
+    db.add(record)
+    db.commit()
+
+    r = client.post("/tasks/manual-running-id/retry")
+    assert r.status_code == 409
+    assert "running" in r.json()["detail"]
+
+
 # ── Background task integration ───────────────────────────────────────────────
 
 
