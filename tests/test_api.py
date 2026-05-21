@@ -82,6 +82,33 @@ def test_health_returns_ok(client: TestClient):
 # ── GET /tools ────────────────────────────────────────────────────────────────
 
 
+# ── GET /stats ────────────────────────────────────────────────────────────────
+
+
+def test_stats_empty(client: TestClient):
+    r = client.get("/stats")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 0
+    assert body["pending"] == 0
+    assert body["done"] == 0
+
+
+def test_stats_counts_tasks(client: TestClient):
+    with patch("app.main.run_agent", new_callable=AsyncMock) as mock_agent:
+        mock_agent.return_value = "done"
+        client.post("/tasks", json={"prompt": "Stats test task one here"})
+        client.post("/tasks", json={"prompt": "Stats test task two here"})
+
+    r = client.get("/stats")
+    body = r.json()
+    assert body["total"] == 2
+    assert body["done"] == 2
+
+
+# ── GET /tools ────────────────────────────────────────────────────────────────
+
+
 def test_list_tools_returns_all_tools(client: TestClient):
     r = client.get("/tools")
     assert r.status_code == 200

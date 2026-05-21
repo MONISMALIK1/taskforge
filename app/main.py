@@ -19,6 +19,7 @@ from typing import AsyncGenerator
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .agent import run_agent
@@ -199,6 +200,24 @@ def delete_task(
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
     db.delete(record)
     db.commit()
+
+
+@app.get(
+    "/stats",
+    summary="Task statistics",
+    description="Returns total task count and a breakdown by status.",
+)
+def stats(db: Session = Depends(get_db)) -> dict:
+    rows = (
+        db.query(TaskRecord.status, func.count(TaskRecord.id))
+        .group_by(TaskRecord.status)
+        .all()
+    )
+    counts: dict = {s.value: 0 for s in TaskStatus}
+    for status, count in rows:
+        counts[status] = count
+    counts["total"] = sum(counts.values())
+    return counts
 
 
 @app.get(
