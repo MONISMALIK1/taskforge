@@ -25,6 +25,7 @@ from .agent import run_agent
 from .config import settings
 from .database import Base, SessionLocal, engine, get_db
 from .models import TaskCreate, TaskRecord, TaskResponse, TaskStatus
+from .tools import _REGISTRY
 
 
 # ── App lifecycle ─────────────────────────────────────────────────────────────
@@ -198,6 +199,18 @@ def delete_task(
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
     db.delete(record)
     db.commit()
+
+
+@app.get(
+    "/tools",
+    summary="List available agent tools",
+    description="Returns every tool the agent can call, with its name and description.",
+)
+def list_tools() -> list[dict]:
+    return [
+        {"name": name, "description": info["description"]}
+        for name, info in _REGISTRY.items()
+    ]
 
 
 @app.get(

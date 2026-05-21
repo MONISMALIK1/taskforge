@@ -79,6 +79,27 @@ def test_health_returns_ok(client: TestClient):
     assert "endpoint" in body
 
 
+# ── GET /tools ────────────────────────────────────────────────────────────────
+
+
+def test_list_tools_returns_all_tools(client: TestClient):
+    r = client.get("/tools")
+    assert r.status_code == 200
+    tools = r.json()
+    names = {t["name"] for t in tools}
+    expected = {"http_get", "write_file", "read_file", "run_shell",
+                "parse_json", "summarise_text", "list_files"}
+    assert expected.issubset(names)
+
+
+def test_list_tools_each_has_description(client: TestClient):
+    r = client.get("/tools")
+    for tool in r.json():
+        assert "name" in tool
+        assert "description" in tool
+        assert len(tool["description"]) > 10
+
+
 # ── POST /tasks ───────────────────────────────────────────────────────────────
 
 
