@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Agent behaviour
     max_tool_calls: int  = 10          # prevent runaway loops
     task_timeout: int    = 120         # seconds before a running task is killed
+    tool_top_k: int      = 5           # TF-IDF tool selection: send top-k relevant tools
 
     # Database
     database_url: str = "sqlite:///./taskforge.db"

@@ -60,6 +60,34 @@ app.add_middleware(
 # ── Background worker ─────────────────────────────────────────────────────────
 
 
+def _build_memory(db, current_task_id: str, limit: int = 3) -> str:
+    """
+    Task memory (A-Mem, arxiv 2502.12110).
+
+    Fetch the last `limit` successfully completed tasks (excluding the
+    current one) and format them as a brief context block for the agent.
+    Simple word-overlap scoring keeps this dependency-free.
+    """
+    past = (
+        db.query(TaskRecord)
+        .filter(
+            TaskRecord.id     != current_task_id,
+            TaskRecord.status == TaskStatus.done,
+            TaskRecord.result.isnot(None),
+        )
+        .order_by(TaskRecord.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
+    if not past:
+        return ""
+    lines = [
+        f'  - Task: "{r.prompt[:80]}" → Result: "{(r.result or "")[:120]}"'
+        for r in past
+    ]
+    return "\n".join(lines)
+
+
 async def _execute_task(task_id: str, prompt: str) -> None:
     """
     Run the agent for a task in the background.
@@ -84,9 +112,14 @@ async def _execute_task(task_id: str, prompt: str) -> None:
         record.updated_at = datetime.now(timezone.utc)
         db.commit()
 
+        # Build task memory from past completed tasks
+        memory = _build_memory(db, task_id)
+        if memory:
+            _log(f"Memory: injecting {len(memory.splitlines())} past task(s) as context")
+
         # Run with a hard timeout
         result = await asyncio.wait_for(
-            run_agent(prompt, _log),
+            run_agent(prompt, _log, memory=memory),
             timeout=settings.task_timeout,
         )
 

@@ -339,7 +339,7 @@ def test_task_transitions_to_failed_on_error(client: TestClient):
 
 def test_task_logs_are_persisted(client: TestClient):
     """Logs written via the _log callback must appear in the GET response."""
-    async def _fake_agent(prompt: str, log):
+    async def _fake_agent(prompt: str, log, memory: str = ""):
         log("Step 1: planning")
         log("Step 2: executing")
         return "Done."
