@@ -12,9 +12,10 @@ class Settings(BaseSettings):
     ollama_timeout: int  = 90          # seconds per LLM call
 
     # Agent behaviour
-    max_tool_calls: int  = 10          # prevent runaway loops
-    task_timeout: int    = 120         # seconds before a running task is killed
-    tool_top_k: int      = 5           # TF-IDF tool selection: send top-k relevant tools
+    max_tool_calls: int       = 10     # prevent runaway loops
+    task_timeout: int         = 120    # seconds before a running task is killed
+    tool_top_k: int           = 5      # TF-IDF tool selection: send top-k relevant tools
+    max_concurrent_tasks: int = 5      # max tasks in pending+running state at once
 
     # Database
     database_url: str = "sqlite:///./taskforge.db"

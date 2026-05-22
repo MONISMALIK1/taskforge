@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 import httpx
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -171,6 +171,21 @@ async def create_task(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> TaskRecord:
+    # Concurrency cap — prevent flooding Ollama with simultaneous tasks
+    active = (
+        db.query(func.count(TaskRecord.id))
+        .filter(TaskRecord.status.in_([TaskStatus.pending, TaskStatus.running]))
+        .scalar()
+    )
+    if active >= settings.max_concurrent_tasks:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"Too many active tasks ({active}/{settings.max_concurrent_tasks}). "
+                "Wait for a task to finish before submitting another."
+            ),
+        )
+
     task_id = str(uuid.uuid4())
     record  = TaskRecord(
         id     = task_id,
@@ -232,6 +247,16 @@ def delete_task(
     record = db.query(TaskRecord).filter(TaskRecord.id == task_id).first()
     if not record:
         raise HTTPException(status_code=404, detail=f"Task '{task_id}' not found.")
+    # Guard: deleting a running/pending task would orphan the background worker —
+    # it would keep running with nowhere to write logs or final status.
+    if record.status in (TaskStatus.running, TaskStatus.pending):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot delete task '{task_id}' while it is '{record.status}'. "
+                "Wait for it to finish, or let it time out first."
+            ),
+        )
     db.delete(record)
     db.commit()
 

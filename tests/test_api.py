@@ -117,6 +117,78 @@ def test_stats_counts_tasks(client: TestClient):
     assert body["done"] == 2
 
 
+# ── Concurrency cap ───────────────────────────────────────────────────────────
+
+
+def test_create_task_rejects_when_too_many_active(client: TestClient):
+    """POST /tasks returns 429 when max_concurrent_tasks is reached."""
+    from app.config import settings
+    from app.models import TaskRecord, TaskStatus as TS
+
+    db = next(override_get_db())
+    for i in range(settings.max_concurrent_tasks):
+        db.add(TaskRecord(
+            id=f"cap-test-{i}",
+            prompt=f"Placeholder task number {i} filling the cap slot",
+            status=TS.pending,
+            logs=[],
+        ))
+    db.commit()
+
+    r = client.post("/tasks", json={"prompt": "This task should be rejected now"})
+    assert r.status_code == 429
+    assert "too many" in r.json()["detail"].lower()
+
+
+# ── Delete guard ───────────────────────────────────────────────────────────────
+
+
+def test_delete_running_task_returns_409(client: TestClient):
+    """DELETE on a running task must return 409 to prevent orphaning the worker."""
+    from app.models import TaskRecord, TaskStatus as TS
+
+    db = next(override_get_db())
+    db.add(TaskRecord(
+        id="del-running-id",
+        prompt="Running task that cannot be deleted right now",
+        status=TS.running,
+        logs=[],
+    ))
+    db.commit()
+
+    r = client.delete("/tasks/del-running-id")
+    assert r.status_code == 409
+    assert "running" in r.json()["detail"].lower()
+
+
+def test_delete_pending_task_returns_409(client: TestClient):
+    from app.models import TaskRecord, TaskStatus as TS
+
+    db = next(override_get_db())
+    db.add(TaskRecord(
+        id="del-pending-id",
+        prompt="Pending task that cannot be deleted yet either",
+        status=TS.pending,
+        logs=[],
+    ))
+    db.commit()
+
+    r = client.delete("/tasks/del-pending-id")
+    assert r.status_code == 409
+
+
+def test_delete_done_task_succeeds(client: TestClient):
+    """Completed tasks can still be deleted normally."""
+    with patch("app.main.run_agent", new_callable=AsyncMock) as mock_agent:
+        mock_agent.return_value = "finished"
+        created = client.post(
+            "/tasks", json={"prompt": "Task that finishes and can be deleted"}
+        ).json()
+
+    r = client.delete(f"/tasks/{created['id']}")
+    assert r.status_code == 204
+
+
 # ── GET /tools ────────────────────────────────────────────────────────────────
 
 
