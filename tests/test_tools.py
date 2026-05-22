@@ -103,6 +103,25 @@ async def test_run_shell_empty_command():
     assert "empty" in result.lower() or "command" in result.lower()
 
 
+@pytest.mark.asyncio
+async def test_run_shell_blocks_semicolon_injection():
+    # echo is allowed but chaining with ; should be blocked
+    result = await call_tool("run_shell", {"command": "echo hello; rm -rf /tmp"})
+    assert "metacharacter" in result.lower() or "disallowed" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_shell_blocks_pipe_injection():
+    result = await call_tool("run_shell", {"command": "echo secret | cat"})
+    assert "metacharacter" in result.lower() or "disallowed" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_run_shell_blocks_subshell_injection():
+    result = await call_tool("run_shell", {"command": "echo $(whoami)"})
+    assert "metacharacter" in result.lower() or "disallowed" in result.lower()
+
+
 # ── parse_json ────────────────────────────────────────────────────────────────
 
 

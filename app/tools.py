@@ -12,11 +12,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+
+# Shell metacharacters that enable command injection.
+# Semicolons chain commands, pipes redirect output to arbitrary binaries,
+# $() / backticks allow subshell execution, & forks background processes.
+_SHELL_INJECTION_RE = re.compile(r"[;&|`${}]")
 
 
 # ── Registry ──────────────────────────────────────────────────────────────────
@@ -61,7 +67,8 @@ async def write_file(filename: str, content: str) -> str:
     # Strip any path traversal — only the basename is used
     safe_name = Path(filename).name
     path = Path("/tmp") / safe_name
-    path.write_text(content, encoding="utf-8")
+    # Run blocking I/O in a thread so the event loop stays free
+    await asyncio.to_thread(path.write_text, content, encoding="utf-8")
     return f"Wrote {len(content)} chars to {path}"
 
 
@@ -73,9 +80,10 @@ async def write_file(filename: str, content: str) -> str:
 async def read_file(filename: str) -> str:
     safe_name = Path(filename).name
     path = Path("/tmp") / safe_name
-    if not path.exists():
+    if not await asyncio.to_thread(path.exists):
         return f"File not found: {safe_name}"
-    return path.read_text(encoding="utf-8")[:4096]
+    content = await asyncio.to_thread(path.read_text, encoding="utf-8")
+    return content[:4096]
 
 
 # Shell commands that are safe to run
@@ -101,6 +109,13 @@ async def run_shell(command: str) -> str:
         return (
             f"'{binary}' is not in the allowed command list. "
             f"Allowed: {', '.join(sorted(_ALLOWED_COMMANDS))}"
+        )
+    # Block shell injection: semicolons, pipes, subshell operators etc.
+    # These bypass the binary whitelist by chaining arbitrary commands.
+    if _SHELL_INJECTION_RE.search(command):
+        return (
+            "Command contains disallowed shell metacharacters (; & | ` $ { }). "
+            "Only simple commands are permitted."
         )
     try:
         proc = await asyncio.to_thread(
