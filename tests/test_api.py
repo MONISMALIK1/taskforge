@@ -83,11 +83,35 @@ def test_health_returns_ok(client: TestClient):
 def test_health_reports_ollama_unreachable(client: TestClient):
     """When Ollama is down the endpoint still returns 200 but flags it."""
     import httpx
+    import app.main as main_mod
+    main_mod._health_cache.clear()          # ensure cache doesn't mask the test
     with patch("app.main.httpx.AsyncClient") as mock_cls:
         mock_cls.return_value.__aenter__.side_effect = httpx.ConnectError("refused")
         r = client.get("/health")
     assert r.status_code == 200
     assert r.json()["ollama_reachable"] is False
+
+
+def test_health_cache_avoids_duplicate_ollama_calls(client: TestClient):
+    """Two rapid /health calls must only hit Ollama once (TTL cache)."""
+    import app.main as main_mod
+    main_mod._health_cache.clear()
+
+    call_count = 0
+
+    async def fake_get(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        return type("R", (), {"status_code": 200})()
+
+    with patch("app.main.httpx.AsyncClient") as mock_cls:
+        mock_instance = mock_cls.return_value.__aenter__.return_value
+        mock_instance.get = fake_get
+
+        client.get("/health")
+        client.get("/health")   # should hit cache, not Ollama
+
+    assert call_count == 1
 
 
 # ── GET /tools ────────────────────────────────────────────────────────────────

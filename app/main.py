@@ -12,6 +12,7 @@ Routes:
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -332,16 +333,27 @@ def list_tools() -> list[dict]:
     ]
 
 
+# Cache the Ollama liveness result for 30 s so monitoring pings don't
+# hammer the local Ollama server on every request.
+_health_cache: dict = {}
+_HEALTH_TTL = 30  # seconds
+
+
 @app.get(
     "/health",
     summary="Liveness check with Ollama connectivity",
     description=(
         "Returns service status plus whether Ollama is reachable. "
         "`ollama_reachable: false` means the agent will fail — "
-        "run `ollama serve` to fix it."
+        "run `ollama serve` to fix it. "
+        "Ollama connectivity is cached for 30 s to avoid hammering the local server."
     ),
 )
 async def health() -> dict:
+    now = time.monotonic()
+    if _health_cache and now - _health_cache["ts"] < _HEALTH_TTL:
+        return _health_cache["data"]
+
     ollama_reachable = False
     try:
         async with httpx.AsyncClient(timeout=3) as _client:
@@ -350,9 +362,11 @@ async def health() -> dict:
     except Exception:
         pass
 
-    return {
+    data = {
         "status":           "ok",
         "model":            settings.ollama_model,
         "endpoint":         settings.ollama_endpoint,
         "ollama_reachable": ollama_reachable,
     }
+    _health_cache.update({"ts": now, "data": data})
+    return data
